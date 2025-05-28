@@ -4,6 +4,12 @@ import { type ImageModelList } from "@/app/_actions/image/generate";
 import { type PlateSlide } from "@/components/presentation/utils/parser";
 
 interface PresentationState {
+
+  // my edits
+  imageGenerationModelOpen: boolean;
+  setImageGenerationModelOpen: (open: boolean) => void;
+
+
   currentPresentationId: string | null;
   currentPresentationTitle: string | null;
   isGridView: boolean;
@@ -76,6 +82,10 @@ interface PresentationState {
 }
 
 export const usePresentationState = create<PresentationState>((set) => ({
+  // my edits
+  imageGenerationModelOpen: false,
+  setImageGenerationModelOpen: (open) => set({ imageGenerationModelOpen: open }),
+  // end of my edits
   currentPresentationId: null,
   currentPresentationTitle: null,
   isGridView: true,
