@@ -1,6 +1,8 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
+import FacebookProvider from "next-auth/providers/facebook" //fb
+// import EmailProvider from "next-auth/providers/email" //email
 import { env } from "@/env";
 import { db } from "@/server/db";
 import NextAuth, { type Session, type DefaultSession } from "next-auth";
@@ -71,7 +73,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return session;
     },
     async signIn({ user, account }) {
-      if (account?.provider === "google") {
+      const isOAuth = ["google", "facebook"].includes(account?.provider || "");
+
+      if (isOAuth) { // Removed '|| account?.provider === "email"'
         const dbUser = await db.user.findUnique({
           where: { email: user.email! },
           select: { id: true, hasAccess: true, role: true },
@@ -86,6 +90,21 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         }
       }
 
+      // if (isOAuth || account?.provider === "email") {
+      //   const dbUser = await db.user.findUnique({
+      //     where: { email: user.email! },
+      //     select: { id: true, hasAccess: true, role: true },
+      //   });
+
+      //   if (dbUser) {
+      //     user.hasAccess = dbUser.hasAccess;
+      //     user.role = dbUser.role;
+      //   } else {
+      //     user.hasAccess = false;
+      //     user.role = "USER";
+      //   }
+      // }
+
       return true;
     },
   },
@@ -96,5 +115,20 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     }),
+    FacebookProvider({
+      clientId: env.FACEBOOK_CLIENT_ID,
+      clientSecret: env.FACEBOOK_CLIENT_SECRET,
+    }),
+    // EmailProvider({
+    //   server: {
+    //     host: env.EMAIL_SERVER_HOST,
+    //     port: Number(env.EMAIL_SERVER_PORT),
+    //     auth: {
+    //       user: env.EMAIL_SERVER_USER,
+    //       pass: env.EMAIL_SERVER_PASSWORD,
+    //     },
+    //   },
+    //   from: env.EMAIL_FROM,
+    // }),
   ],
 });
