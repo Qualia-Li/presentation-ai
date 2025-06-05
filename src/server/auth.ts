@@ -73,7 +73,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return session;
     },
     async signIn({ user, account }) {
-      const isOAuth = ["google", "facebook"].includes(account?.provider || "");
+      const isOAuth = ["google", "facebook"].includes(account?.provider ?? "");
 
       if (isOAuth) { // Removed '|| account?.provider === "email"'
         const dbUser = await db.user.findUnique({
