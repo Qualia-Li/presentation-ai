@@ -124,6 +124,7 @@
     "next": "14.2.23",
     "next-auth": "5.0.0-beta.19",
     "next-themes": "^0.3.0",
+    "nodemailer": "^7.0.3",
     "prisma": "^5.22.0",
     "prismjs": "^1.29.0",
     "prosemirror-commands": "^1.6.2",
