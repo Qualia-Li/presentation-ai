@@ -1,9 +1,13 @@
-// src/server/auth.ts (Your full NextAuth configuration, used for API routes and server components)
+// src/server/auth.edge.ts
+// This configuration is specifically for the Edge Runtime (middleware)
+// It EXCLUDES providers that use Node.js-specific modules like 'nodemailer'.
+
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
-import FacebookProvider from "next-auth/providers/facebook" //fb
-import EmailProvider from "next-auth/providers/email" //email // <-- UNCOMMENT THIS LINE
+import FacebookProvider from "next-auth/providers/facebook";
+// DO NOT import EmailProvider here! This is the key to avoiding the Edge error.
+
 import { env } from "@/env";
 import { db } from "@/server/db";
 import NextAuth, { type Session, type DefaultSession } from "next-auth";
@@ -43,7 +47,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         token.isAdmin = user.role === "ADMIN";
       }
 
-      // Handle updates
       if (trigger === "update" && (session as Session)?.user) {
         const user = await db.user.findUnique({
           where: { id: token.id as string },
@@ -62,7 +65,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           token.isAdmin = user.role === "ADMIN";
         }
       }
-
       return token;
     },
     async session({ session, token }) {
@@ -76,8 +78,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async signIn({ user, account }) {
       const isOAuth = ["google", "facebook"].includes(account?.provider ?? "");
 
-      // Ensure this also handles "email" provider for database user setup
-      if (isOAuth || account?.provider === "email") { // <-- RE-ENABLE THIS CHECK
+      // For EmailProvider, the actual email sending happens on the API route,
+      // but this `signIn` callback might still be called for validation.
+      // Make sure the `account?.provider === "email"` check is there.
+      if (isOAuth || account?.provider === "email") { // Keep this check for "email" to handle user data even if provider isn't directly loaded
         const dbUser = await db.user.findUnique({
           where: { email: user.email! },
           select: { id: true, hasAccess: true, role: true },
@@ -87,15 +91,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           user.hasAccess = dbUser.hasAccess;
           user.role = dbUser.role;
         } else {
-          // If a new user signs in via email, set default access/role
-          user.hasAccess = false;
-          user.role = "USER";
+          user.hasAccess = false; // Default for new users without explicit access
+          user.role = "USER"; // Default role for new users
         }
       }
       return true;
     },
   },
-
   adapter: PrismaAdapter(db) as Adapter,
   providers: [
     GoogleProvider({
@@ -106,16 +108,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       clientId: env.FACEBOOK_CLIENT_ID,
       clientSecret: env.FACEBOOK_CLIENT_SECRET,
     }),
-    EmailProvider({ // <-- UNCOMMENT THIS BLOCK AND ENSURE env VARS ARE CORRECT
-      server: {
-        host: env.EMAIL_SERVER_HOST,
-        port: Number(env.EMAIL_SERVER_PORT),
-        auth: {
-          user: env.EMAIL_SERVER_USER,
-          pass: env.EMAIL_SERVER_PASSWORD,
-        },
-      },
-      from: env.EMAIL_FROM,
-    }),
+    // EXCLUDE EmailProvider HERE for the Edge Runtime
   ],
 });

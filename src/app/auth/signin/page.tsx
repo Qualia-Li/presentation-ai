@@ -1,7 +1,7 @@
 // src/app/auth/signin/page.tsx
 "use client";
 
-import { signIn, useSession } from "next-auth/react"; // Added useSession
+import { signIn, useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,35 +11,49 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { FaGoogle, FaFacebook, FaEnvelope } from "react-icons/fa"; // Added FaFacebook, FaEnvelope
-import { useSearchParams, useRouter } from "next/navigation"; // Added useRouter
-import { useEffect } from "react"; // Added useEffect
+import { FaGoogle, FaFacebook, FaEnvelope } from "react-icons/fa";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react"; // Added useState here
 
 export default function SignIn() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
   const error = searchParams.get("error");
-  const { data: session, status } = useSession(); // Get session data and status
-  const router = useRouter(); // Initialize router
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  // State to hold the email input value
+  const [email, setEmail] = useState("");
 
   // --- Logic to redirect authenticated users from this page ---
   useEffect(() => {
-    // If the user is authenticated and is currently on an authentication page,
-    // redirect them to the main application page (e.g., /presentation).
     if (status === "authenticated" && session) {
-      router.replace("/presentation"); // Use replace to prevent going back to the sign-in page
+      router.replace("/presentation");
     }
-  }, [session, status, router]); // Dependencies ensure the effect re-runs if these values change
+  }, [session, status, router]);
   // -----------------------------------------------------------
 
-  const handleSignIn = async (provider: string) => {
-    // IMPORTANT: Ensure the provider ID matches what's configured in auth.ts
-    // The default for EmailProvider is usually "email".
-    await signIn(provider, { callbackUrl });
+  // Modified handleSignIn to accept optional credentials (like email)
+  const handleSignIn = async (provider: string, credentials?: Record<string, string>) => {
+    // For email provider, credentials will contain the email
+    // For OAuth providers, credentials will be undefined or empty, which is fine.
+    // Ensure credentials is always an object to be spread correctly
+    const signInOptions = { callbackUrl, ...(credentials ?? {}) };
+    await signIn(provider, signInOptions);
+  };
+
+  // New function specifically for handling Email sign-in
+  const handleEmailSignIn = async () => {
+    if (!email) {
+      // You can replace this alert with a more visually appealing error message
+      // using your UI components (e.g., a toast or a simple text error below the input).
+      alert("Please enter your email address.");
+      return;
+    }
+    await handleSignIn("email", { email }); // Pass the email entered by the user
   };
 
   // Optionally, display a loading state while the session is being checked.
-  // This prevents the form from flashing before the redirect occurs.
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-slate-900">
@@ -49,7 +63,6 @@ export default function SignIn() {
   }
 
   // Only render the sign-in form if the user is unauthenticated.
-  // If `status` is "authenticated", the useEffect above will handle the redirect.
   if (status === "unauthenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-slate-900 px-4">
@@ -69,6 +82,50 @@ export default function SignIn() {
             )}
           </CardHeader>
           <CardContent className="grid gap-4">
+            {/* Email Input Section */}
+            <div className="grid gap-2">
+              {/* You implicitly have Label and Input in your components/ui, so use them like this */}
+              <label htmlFor="email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                placeholder="m@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => { // Allow pressing Enter in the email field to submit
+                  if (e.key === 'Enter') {
+                    void handleEmailSignIn();
+                  }
+                }}
+                // Basic styling for the input if not using a specific UI library's Input component
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            {/* Email Sign-in Button */}
+            <Button
+              variant="outline"
+              className="flex items-center justify-center gap-2"
+              onClick={handleEmailSignIn} // Call the dedicated email sign-in handler
+            >
+              <FaEnvelope className="h-4 w-4" />
+              Sign in with Email
+            </Button>
+
+            {/* Separator */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with
+                </span>
+              </div>
+            </div>
+
+            {/* Social Sign-in Buttons */}
             <Button
               variant="outline"
               className="flex items-center justify-center gap-2"
@@ -78,7 +135,6 @@ export default function SignIn() {
               Sign in with Google
             </Button>
 
-            {/* --- Facebook Sign-in Button --- */}
             <Button
               variant="outline"
               className="flex items-center justify-center gap-2"
@@ -86,16 +142,6 @@ export default function SignIn() {
             >
               <FaFacebook className="h-4 w-4" />
               Sign in with Facebook
-            </Button>
-
-            {/* --- Email Sign-in Button --- */}
-            <Button
-              variant="outline"
-              className="flex items-center justify-center gap-2"
-              onClick={() => handleSignIn("email")} // Assuming "email" is the provider ID in auth.ts
-            >
-              <FaEnvelope className="h-4 w-4" />
-              Sign in with Email
             </Button>
           </CardContent>
           <CardFooter className="flex flex-col items-center justify-center gap-2">
@@ -108,5 +154,5 @@ export default function SignIn() {
     );
   }
 
-  return null; // Return null if authenticated (redirect handled by useEffect) or if loading
+  return null;
 }
