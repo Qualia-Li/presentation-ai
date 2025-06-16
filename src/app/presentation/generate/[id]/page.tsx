@@ -1,6 +1,7 @@
+// src/app/presentation/generate/[id]/page.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Wand2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +21,17 @@ import { ThemeSettings } from "@/components/presentation/theme/ThemeSettings";
 import { Header } from "@/components/presentation/outline/Header";
 import { PromptInput } from "@/components/presentation/outline/PromptInput";
 import { OutlineList } from "@/components/presentation/outline/OutlineList";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+
+// Type definition for API response from /api/extract-pdf-text
+interface PDFExtractResponse {
+  success: boolean;
+  text?: string;
+  pages?: number;
+  totalPages?: number;
+  message?: string;
+}
 
 export default function PresentationGenerateWithIdPage() {
   const router = useRouter();
@@ -37,7 +49,13 @@ export default function PresentationGenerateWithIdPage() {
     setImageModel,
     setPresentationStyle,
     setLanguage,
+    presentationInput, // <--- Added this to get the current text prompt value
   } = usePresentationState();
+
+  // State for document upload
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   // Track if this is a fresh navigation or a revisit
   const initialLoadComplete = useRef(false);
@@ -59,7 +77,6 @@ export default function PresentationGenerateWithIdPage() {
   );
 
   // This effect handles the immediate startup of generation upon first mount
-  // only if we're coming fresh from the dashboard (isGeneratingOutline === true)
   useEffect(() => {
     // Only run once on initial page load
     if (initialLoadComplete.current) return;
@@ -83,7 +100,7 @@ export default function PresentationGenerateWithIdPage() {
   useEffect(() => {
     if (presentationData && !isLoadingPresentation) {
       setCurrentPresentation(presentationData.id, presentationData.title);
-      setPresentationInput(presentationData.title);
+      setPresentationInput(presentationData.title); // This will be the initial prompt text if any
 
       if (presentationData.presentation?.outline) {
         setOutline(presentationData.presentation.outline);
@@ -149,9 +166,98 @@ export default function PresentationGenerateWithIdPage() {
     setLanguage,
   ]);
 
-  const handleGenerate = () => {
+  // Handler for file input change
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null); // Clear previous errors
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type !== "application/pdf") {
+        setFileError("Only PDF files are supported.");
+        setSelectedFile(null);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        setFileError("File too large. Maximum size is 10MB.");
+        setSelectedFile(null);
+        return;
+      }
+      setSelectedFile(file);
+      console.log("Selected file:", file.name);
+      // REMOVED: setPresentationInput(""); // No longer clearing text prompt here
+    } else {
+      setSelectedFile(null);
+      // Optional: If file is unselected, restore previous text input or set to empty
+      // setPresentationInput("");
+    }
+  };
+
+  const handleGenerate = async () => {
+    // Navigate to the presentation view first
     router.push(`/presentation/${id}`);
-    startPresentationGeneration();
+
+    // Start with the current text prompt content
+    let finalInputText = presentationInput;
+
+    if (selectedFile) {
+      setIsProcessingFile(true);
+      setFileError(null);
+      try {
+        const formData = new FormData();
+        formData.append('pdfFile', selectedFile);
+
+        const response = await fetch('/api/extract-pdf-text', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json() as PDFExtractResponse; // Type assertion
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message ?? `Failed to extract text from PDF: ${response.statusText}`);
+        }
+
+        const extractedText = data.text;
+
+        if (extractedText) {
+          // COMBINE LOGIC:
+          if (finalInputText.trim() !== "") {
+            // If there's existing text input, combine it with the PDF text
+            // Using a distinct separator to differentiate content sources
+            finalInputText = `${finalInputText.trim()}\n\n---\n\n${extractedText.trim()}`;
+          } else {
+            // If no existing text input, just use the extracted text
+            finalInputText = extractedText.trim();
+          }
+
+          // Optional: Show success message with page info
+          if (data.pages && data.totalPages) {
+            console.log(`Successfully extracted text from ${data.pages} of ${data.totalPages} pages`);
+          }
+        } else {
+          setFileError('Could not extract text from the PDF. It might be empty or malformed.');
+          setIsProcessingFile(false); // Ensure loading state is reset on error
+          return; // Don't proceed with generation if PDF extraction failed
+        }
+
+      } catch (error: unknown) { // Use unknown for catch error and then narrow its type
+        console.error('Error processing PDF:', error);
+        let errorMessage = 'An unknown error occurred.';
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        }
+        setFileError(`Failed to process document: ${errorMessage}`);
+        setIsProcessingFile(false); // Ensure loading state is reset on error
+        return; // Don't proceed with generation if there was an error
+      }
+      // Note: finally block is removed as setIsProcessingFile(false) is now in catch/else blocks
+    }
+
+    // Set the final combined text to the presentation state
+    // This happens whether a PDF was processed or only text input was used
+    setPresentationInput(finalInputText);
+    startPresentationGeneration(); // Trigger the AI generation with the combined text
   };
 
   if (isLoadingPresentation) {
@@ -169,6 +275,10 @@ export default function PresentationGenerateWithIdPage() {
       </ThemeBackground>
     );
   }
+
+  // Determine if generation is happening (either presentation generation or file processing)
+  const isGenerating = isGeneratingPresentation || isProcessingFile;
+
   return (
     <ThemeBackground>
       <Button
@@ -183,7 +293,40 @@ export default function PresentationGenerateWithIdPage() {
       <div className="mx-auto max-w-4xl space-y-8 p-8 pt-6">
         <div className="space-y-8">
           <Header />
-          <PromptInput />
+          <PromptInput /> {/* Existing text input component */}
+
+          {/* New: Document Upload Section */}
+          <div className="!mt-8 space-y-4 rounded-lg border bg-muted/30 p-6">
+            <h2 className="text-lg font-semibold">Or Upload a Document</h2>
+            <p className="text-sm text-muted-foreground">
+              Upload a PDF document to generate a presentation from its content. Maximum file size: 10MB.
+            </p>
+            <div className="grid w-full max-w-sm items-center gap-1.5">
+              <Label htmlFor="document-upload" className="sr-only">Upload Document</Label>
+              <Input
+                id="document-upload"
+                type="file"
+                accept=".pdf" // Restrict to PDF files
+                onChange={handleFileChange}
+                // Tailwind classes for styling a file input to look decent
+                className="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-primary file:text-primary-foreground
+                  hover:file:bg-primary/90"
+              />
+              {selectedFile && !fileError && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              )}
+              {fileError && (
+                <p className="text-sm text-red-500 mt-2">{fileError}</p>
+              )}
+            </div>
+          </div>
+
           <OutlineList />
 
           <div className="!mb-32 space-y-4 rounded-lg border bg-muted/30 p-6">
@@ -198,10 +341,20 @@ export default function PresentationGenerateWithIdPage() {
           size="lg"
           className="gap-2 px-8"
           onClick={handleGenerate}
-          disabled={isGeneratingPresentation}
+          // Disable if any generation/processing is active
+          disabled={isGenerating || isGeneratingOutline}
         >
-          <Wand2 className="h-5 w-5" />
-          {isGeneratingPresentation ? "Generating..." : "Generate Presentation"}
+          {isGenerating ? (
+            <>
+              <Spinner className="h-5 w-5 animate-spin mr-2" />
+              {isProcessingFile ? "Processing Document..." : "Generating Presentation..."}
+            </>
+          ) : (
+            <>
+              <Wand2 className="h-5 w-5" />
+              Generate Presentation
+            </>
+          )}
         </Button>
       </div>
     </ThemeBackground>
