@@ -6,6 +6,8 @@
  */
 await import("./src/env.js");
 
+import webpack from 'webpack'; // Import webpack directly
+
 /** @type {import("next").NextConfig} */
 const config = {
   images: {
@@ -22,28 +24,48 @@ const config = {
         protocol: "https",
         hostname: "lh3.googleusercontent.com",
       },
-      // You might also need to add 'nextjs.org' here if your src/app/page.tsx
-      // still uses images from nextjs.org (e.g., icons/next.svg, icons/vercel.svg)
-      // {
-      //   protocol: 'https',
-      //   hostname: 'nextjs.org',
-      //   pathname: '/icons/**',
-      // },
     ],
   },
-  // --- ADD THIS WEBPACK CONFIGURATION BLOCK ---
+  // --- ADD THIS EXPERIMENTAL CONFIGURATION ---
+  experimental: {
+    // This makes pdf-parse an external package for server components/API routes.
+    // It prevents Next.js from trying to deeply bundle it, potentially avoiding
+    // issues with its internal file access patterns.
+    serverComponentsExternalPackages: ['pdf-parse'],
+  },
+  // --- END EXPERIMENTAL CONFIGURATION ---
   webpack: (config, { isServer }) => {
-    // If it's a client-side bundle, prevent 'fs' from being included.
-    // This is a common workaround for libraries that might accidentally
-    // pull in Node.js-specific modules into the client-side bundle.
     if (!isServer) {
       config.resolve.fallback = {
-        fs: false, // Prevents 'fs' (file system) module from being bundled
+        fs: false,
       };
     }
+
+    // Keep the IgnorePlugins for now, as they generally don't hurt and might
+    // catch other subtle issues.
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /.*\.pdf$/,
+        contextRegExp: /test[\\\/]data/,
+      })
+    );
+
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /^(canvas|jsdom)$/,
+        contextRegExp: /pdf-parse/,
+      })
+    );
+
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /pdfjs-dist\/build\/pdf\.worker\.js/,
+        contextRegExp: /pdf-parse/,
+      })
+    );
+
     return config;
-  },
-  // --- END OF WEBPACK CONFIGURATION BLOCK ---
+  },  
 };
 
 export default config;
